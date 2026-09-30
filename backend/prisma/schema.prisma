@@ -1,0 +1,79 @@
+// Prisma schema for the B2B subscription module
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum LicenseStatus {
+  ACTIVE
+  REVOKED
+}
+
+// Corporate client with contracted limits (seats and API usage)
+model Company {
+  id           String        @id @default(uuid())
+  name         String        @unique
+  apiLimit     Int           @default(100000)
+  licenseLimit Int           @default(50)
+  createdAt    DateTime      @default(now())
+  users        User[]
+  licenses     License[]
+  usageMetrics UsageMetric[]
+
+  @@map("companies")
+}
+
+// End-user of a corporate client, identified by JWT role
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  role         Role      @default(USER)
+  createdAt    DateTime  @default(now())
+  company      Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId    String
+  licenses     License[]
+
+  @@index([companyId])
+  @@map("users")
+}
+
+// License assigned to a user, validated against company.licenseLimit
+model License {
+  id         String        @id @default(uuid())
+  status     LicenseStatus @default(ACTIVE)
+  assignedAt DateTime      @default(now())
+  revokedAt  DateTime?
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  company    Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId  String
+
+  @@index([companyId, status])
+  @@index([userId])
+  @@map("licenses")
+}
+
+// Simulated daily API consumption reported by the (mocked) usage service
+model UsageMetric {
+  id        String   @id @default(uuid())
+  date      DateTime @db.Date
+  apiCalls  Int      @default(0)
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId String
+
+  @@unique([companyId, date])
+  @@map("usage_metrics")
+}
