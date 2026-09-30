@@ -1,16 +1,16 @@
-import "dotenv/config";
-import { randomUUID } from "node:crypto";
-import { PrismaClient } from "../generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
-import bcrypt from "bcryptjs";
+import 'dotenv/config';
+import { randomUUID } from 'node:crypto';
+import { PrismaClient } from '../generated/prisma/client.js';
+import { PrismaPg } from '@prisma/adapter-pg';
+import bcrypt from 'bcryptjs';
 
-const adapter = new PrismaPg({ connectionString: process.env["DATABASE_URL"] });
+const adapter = new PrismaPg({ connectionString: process.env['DATABASE_URL'] });
 const prisma = new PrismaClient({ adapter });
 
-const COMPANY_NAME = "Acme Corporation";
+const COMPANY_NAME = 'Acme Corporation';
 
 async function main() {
-  const passwordHash = await bcrypt.hash("Password123!", 10);
+  const passwordHash = await bcrypt.hash('Password123!', 10);
 
   const company = await prisma.company.upsert({
     where: { name: COMPANY_NAME },
@@ -23,16 +23,51 @@ async function main() {
   });
 
   const seedUsers = [
-    { email: "admin@empresa.com", name: "Ana Admin", role: "ADMIN" as const, licensed: true },
-    { email: "usuario@empresa.com", name: "Luis User", role: "USER" as const, licensed: true },
-    { email: "maria.garcia@empresa.com", name: "Maria Garcia", role: "USER" as const, licensed: true },
-    { email: "carlos.lopez@empresa.com", name: "Carlos Lopez", role: "USER" as const, licensed: true },
-    { email: "sofia.martinez@empresa.com", name: "Sofia Martinez", role: "USER" as const, licensed: true },
-    { email: "jorge.ruiz@empresa.com", name: "Jorge Ruiz", role: "USER" as const, licensed: true },
-    { email: "laura.torres@empresa.com", name: "Laura Torres", role: "USER" as const, licensed: true },
-    { email: "diego.ramos@empresa.com", name: "Diego Ramos", role: "USER" as const, licensed: false },
-    { email: "elena.vargas@empresa.com", name: "Elena Vargas", role: "USER" as const, licensed: true },
-    { email: "pablo.mendoza@empresa.com", name: "Pablo Mendoza", role: "USER" as const, licensed: false },
+    { email: 'admin@empresa.com', name: 'Ana Admin', role: 'ADMIN' as const, licensed: true },
+    { email: 'usuario@empresa.com', name: 'Luis User', role: 'USER' as const, licensed: true },
+    {
+      email: 'maria.garcia@empresa.com',
+      name: 'Maria Garcia',
+      role: 'USER' as const,
+      licensed: true,
+    },
+    {
+      email: 'carlos.lopez@empresa.com',
+      name: 'Carlos Lopez',
+      role: 'USER' as const,
+      licensed: true,
+    },
+    {
+      email: 'sofia.martinez@empresa.com',
+      name: 'Sofia Martinez',
+      role: 'USER' as const,
+      licensed: true,
+    },
+    { email: 'jorge.ruiz@empresa.com', name: 'Jorge Ruiz', role: 'USER' as const, licensed: true },
+    {
+      email: 'laura.torres@empresa.com',
+      name: 'Laura Torres',
+      role: 'USER' as const,
+      licensed: true,
+    },
+    {
+      email: 'diego.ramos@empresa.com',
+      name: 'Diego Ramos',
+      role: 'USER' as const,
+      licensed: false,
+    },
+    {
+      email: 'elena.vargas@empresa.com',
+      name: 'Elena Vargas',
+      role: 'USER' as const,
+      licensed: true,
+    },
+    {
+      email: 'pablo.mendoza@empresa.com',
+      name: 'Pablo Mendoza',
+      role: 'USER' as const,
+      licensed: false,
+    },
   ];
 
   const users = [];
@@ -54,14 +89,14 @@ async function main() {
   for (const user of users) {
     if (!user.licensed) continue;
     const existing = await prisma.license.findFirst({
-      where: { userId: user.id, status: "ACTIVE" },
+      where: { userId: user.id, status: 'ACTIVE' },
     });
     if (existing) continue;
     await prisma.license.create({
       data: {
         userId: user.id,
         companyId: company.id,
-        status: "ACTIVE",
+        status: 'ACTIVE',
       },
     });
   }
@@ -94,10 +129,10 @@ async function main() {
     _sum: { apiCalls: true },
   });
   const activeLicenses = await prisma.license.count({
-    where: { companyId: company.id, status: "ACTIVE" },
+    where: { companyId: company.id, status: 'ACTIVE' },
   });
 
-  console.log("Seed completed:");
+  console.log('Seed completed:');
   console.log(`  Company: ${company.name} (id=${company.id})`);
   console.log(`  Users: ${users.length}`);
   console.log(`  Active licenses: ${activeLicenses}/${company.licenseLimit}`);
