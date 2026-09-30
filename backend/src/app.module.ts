@@ -1,6 +1,9 @@
 import { Module, ValidationPipe } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_PIPE } from '@nestjs/core';
+import { APP_GUARD, APP_PIPE } from '@nestjs/core';
+import { AuthModule } from './auth/auth.module.js';
+import { JwtAuthGuard } from './auth/jwt-auth.guard.js';
+import { RolesGuard } from './auth/roles.guard.js';
 import { HealthController } from './health.controller.js';
 import { LicensesModule } from './licenses/licenses.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
@@ -10,6 +13,7 @@ import { UsageModule } from './usage/usage.module.js';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
+    AuthModule,
     UsageModule,
     LicensesModule,
   ],
@@ -23,6 +27,8 @@ import { UsageModule } from './usage/usage.module.js';
         transform: true,
       }),
     },
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
   ],
 })
 export class AppModule {}
