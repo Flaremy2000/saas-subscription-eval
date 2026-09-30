@@ -8,11 +8,16 @@
     "build": "run-p type-check \"build-only {@}\" --",
     "preview": "vite preview",
     "test:unit": "vitest",
+    "test:run": "vitest run",
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "lint": "run-s \"lint:*\"",
     "lint:oxlint": "oxlint . --fix",
-    "lint:eslint": "eslint . --fix --cache"
+    "lint:eslint": "eslint . --fix --cache",
+    "check": "run-s format:check check:lint type-check test:run build-only",
+    "check:lint": "oxlint . && eslint ."
   },
   "dependencies": {
     "pinia": "^4.0.3",
@@ -35,6 +40,7 @@
     "jsdom": "^30.0.1",
     "npm-run-all2": "^9.0.3",
     "oxlint": "~1.82.0",
+    "prettier": "^3.9.9",
     "typescript": "~6.0.0",
     "vite": "^8.2.2",
     "vite-plugin-vue-devtools": "^8.2.1",
