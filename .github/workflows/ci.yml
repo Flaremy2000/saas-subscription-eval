@@ -48,6 +48,9 @@ jobs:
       - name: Tests (Vitest)
         run: pnpm test
 
+      - name: Build (NestJS)
+        run: pnpm build
+
   frontend:
     name: Frontend (lint, format, typecheck, tests, build)
     runs-on: ubuntu-latest
