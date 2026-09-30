@@ -1,27 +1,13 @@
 import { Controller, Get } from '@nestjs/common';
-
-export interface UsageSummary {
-  usage: {
-    totalLicenses: number;
-    usedLicenses: number;
-    availableLicenses: number;
-    usagePercentage: number;
-  };
-  status: string;
-}
+import { CurrentUser } from '../auth/current-user.decorator.js';
+import { UsageService, type UsageReport } from './usage.service.js';
 
 @Controller('usage')
 export class UsageController {
+  constructor(private readonly usageService: UsageService) {}
+
   @Get()
-  getUsage(): UsageSummary {
-    return {
-      usage: {
-        totalLicenses: 100,
-        usedLicenses: 42,
-        availableLicenses: 58,
-        usagePercentage: 42,
-      },
-      status: 'healthy',
-    };
+  getUsage(@CurrentUser() user: Express.User): Promise<UsageReport> {
+    return this.usageService.getUsage(user.companyId);
   }
 }
