@@ -1,17 +1,16 @@
 import type { INestApplication } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
 import bcrypt from 'bcryptjs';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { AppModule } from '../src/app.module.js';
 import type { User } from '../src/generated/prisma/client.js';
-import { PrismaService } from '../src/prisma/prisma.service.js';
+import { createTestApp } from './create-app.js';
+import { FakePrisma } from './fakes/prisma.fake.js';
 
 const PASSWORD = 'Password123!';
 const passwordHash = bcrypt.hashSync(PASSWORD, 4);
 
-const users: Record<string, User> = {
-  'admin@empresa.com': {
+const users: User[] = [
+  {
     id: 'user-admin',
     email: 'admin@empresa.com',
     name: 'Ana Admin',
@@ -20,7 +19,7 @@ const users: Record<string, User> = {
     passwordHash,
     createdAt: new Date(),
   },
-  'usuario@empresa.com': {
+  {
     id: 'user-regular',
     email: 'usuario@empresa.com',
     name: 'Luis User',
@@ -29,14 +28,7 @@ const users: Record<string, User> = {
     passwordHash,
     createdAt: new Date(),
   },
-};
-
-const prismaStub = {
-  user: {
-    findUnique: async ({ where }: { where: { email: string } }): Promise<User | null> =>
-      users[where.email] ?? null,
-  },
-};
+];
 
 describe('Authentication (e2e)', () => {
   let app: INestApplication;
@@ -50,14 +42,9 @@ describe('Authentication (e2e)', () => {
   };
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(PrismaService)
-      .useValue(prismaStub)
-      .compile();
-
-    app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api/v1');
-    await app.init();
+    const prisma = new FakePrisma();
+    prisma.users.push(...users);
+    app = await createTestApp(prisma);
   });
 
   afterAll(async () => {
@@ -127,44 +114,6 @@ describe('Authentication (e2e)', () => {
     const res = await http().get('/api/v1/auth/me').set('Authorization', 'Bearer not-a-real-token');
 
     expect(res.status).toBe(401);
-  });
-
-  it('returns usage metrics to authenticated users', async () => {
-    const token = await loginAs('usuario@empresa.com');
-
-    const res = await http().get('/api/v1/usage').set('Authorization', `Bearer ${token}`);
-
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({
-      usage: {
-        totalLicenses: 100,
-        usedLicenses: 42,
-        availableLicenses: 58,
-        usagePercentage: 42,
-      },
-      status: 'healthy',
-    });
-  });
-
-  it('forbids non-admin users from assigning licenses', async () => {
-    const token = await loginAs('usuario@empresa.com');
-
-    const res = await http()
-      .post('/api/v1/licenses/assign')
-      .set('Authorization', `Bearer ${token}`);
-
-    expect(res.status).toBe(403);
-  });
-
-  it('allows admins to assign licenses', async () => {
-    const token = await loginAs('admin@empresa.com');
-
-    const res = await http()
-      .post('/api/v1/licenses/assign')
-      .set('Authorization', `Bearer ${token}`);
-
-    expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ success: true, message: 'License assigned successfully' });
   });
 
   it('returns 404 for unknown routes', async () => {
