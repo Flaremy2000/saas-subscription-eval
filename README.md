@@ -52,8 +52,9 @@ asignar licencias de forma optimista desde el panel.
 - El frontend se comunica con la API **a través del proxy de Vite** (`/api/v1` → backend),
   por lo que no hay problemas de CORS en desarrollo.
 - Toda la API vive bajo el prefijo global **`/api/v1`**.
-- El frontend también funciona detrás de `docker compose` y en build de producción
-  (el proxy solo aplica al dev server).
+- El frontend también funciona detrás de `docker compose` (verificado con volúmenes
+  vacíos); el build de producción (`pnpm build`) pasa type-check y puede apuntar a una
+  API externa mediante `VITE_API_URL` (el proxy de Vite solo aplica al dev server).
 
 ## Arquitectura de software
 
@@ -335,12 +336,12 @@ como **threshold de Vitest**: el comando falla si baja del mínimo.
 # Backend (unit + e2e sin BD: usa un fake de Prisma)
 cd backend
 pnpm test:coverage
-# 76 tests · 98%+ stmts · 95%+ branches
+# 115 tests · 99.5% stmts · 96.9% branches
 
 # Frontend (jsdom + @vue/test-utils)
 cd frontend
 pnpm test:coverage
-# 51 tests · 94%+ stmts · 87%+ branches
+# 67 tests · 92.9% stmts · 86.6% branches
 ```
 
 - Los e2e del backend (`backend/test/*.e2e-spec.ts`) montan la app real con
@@ -360,21 +361,21 @@ paralelos (`pnpm` + caché):
 ```
 ├── backend/
 │   ├── prisma/
-│   │   ├── schema.prisma          # modelos Company, User, License
+│   │   ├── schema.prisma          # modelos Company, User, License, UsageMetric, UserUsageMetric
 │   │   ├── migrations/            # migraciones versionadas
 │   │   └── seed.ts                # datos de ejemplo
 │   ├── src/
 │   │   ├── shared/                # dominio transversal, Prisma, guards y filters
 │   │   ├── identity/              # login JWT, usuarios, roles (hexagonal)
-│   │   ├── licensing/             # POST /licenses/assign (ADMIN)
-│   │   ├── consumption/           # GET /usage
+│   │   ├── licensing/             # POST /licenses/assign|revoke (ADMIN)
+│   │   ├── consumption/           # GET /usage (ADMIN) y /usage/me
 │   │   ├── app.module.ts          # pipes, guards y filters globales
 │   │   └── main.ts
 │   └── test/                      # e2e + fakes (sin BD real)
 ├── frontend/
 │   └── src/
 │       ├── api/                   # cliente fetch tipado (ApiError, apiFetch)
-│       ├── components/dashboard/  # UsageChart, UserTable, builders del chart
+│       ├── components/dashboard/  # UsageChart, UserTable, PersonalUsage, builders del chart
 │       ├── router/                # guards, lazy routes, sanitizado de redirects
 │       ├── stores/                # Pinia: auth (token + usuario + logout 401)
 │       ├── views/                 # LoginView, DashboardView
@@ -416,6 +417,7 @@ Decisiones tomados ante ambigüedades del enunciado (criterio de evaluación de 
   no puede leer ni asignar licencias fuera de su empresa.
 - **Asignación optimista** en el frontend: la fila se actualiza al instante y se
   reconcilia con `GET /usage`; si el backend rechaza (403/409) se revierte.
-- **Roles en backend**: aunque el frontend oculta los botones a `USER`, el endpoint
-  `POST /licenses/assign` exige `ADMIN` (defensa en profundidad).
+- **Roles en backend (defensa en profundidad)**: aunque el frontend oculta los controles
+  a `USER`, `GET /usage`, `GET /users`, `POST /licenses/assign|revoke` y
+  `PATCH /users/:id/role` exigen `ADMIN` (`@Roles`), devolviendo 403.
 - **Cobertura ≥ 80%** forzada en CI en ambos proyectos (criterio 8).
