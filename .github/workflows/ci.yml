@@ -45,8 +45,8 @@ jobs:
       - name: Typecheck (tsc)
         run: pnpm typecheck
 
-      - name: Tests (Vitest)
-        run: pnpm test
+      - name: Tests with coverage (Vitest)
+        run: pnpm test:coverage
 
       - name: Build (NestJS)
         run: pnpm build

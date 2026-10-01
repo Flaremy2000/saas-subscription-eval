@@ -12,6 +12,19 @@ export default defineConfig({
       JWT_EXPIRES_IN: '1h',
       DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/saas_subscription',
     },
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov', 'html'],
+      reportsDirectory: 'coverage',
+      include: ['src/**/*.ts'],
+      exclude: ['src/generated/**', 'src/**/*.spec.ts'],
+      thresholds: {
+        statements: 80,
+        branches: 80,
+        functions: 80,
+        lines: 80,
+      },
+    },
   },
   plugins: [
     swc.vite({
