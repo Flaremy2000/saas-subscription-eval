@@ -33,18 +33,35 @@ const assignedLicense = {
   companyId: 'company-1',
   status: 'ACTIVE' as const,
   assignedAt: new Date('2026-01-01T00:00:00.000Z'),
+  revokedAt: null,
+};
+
+const revokedLicense = {
+  ...assignedLicense,
+  status: 'REVOKED' as const,
+  revokedAt: new Date('2026-02-01T00:00:00.000Z'),
 };
 
 const dto: AssignLicenseRequest = { userId: 'user-2' };
 
 describe('LicensesService', () => {
   let users: { findById: ReturnType<typeof vi.fn> };
-  let licenses: { assign: ReturnType<typeof vi.fn>; countActive: ReturnType<typeof vi.fn> };
+  let licenses: {
+    assign: ReturnType<typeof vi.fn>;
+    countActive: ReturnType<typeof vi.fn>;
+    findActiveByUser: ReturnType<typeof vi.fn>;
+    revoke: ReturnType<typeof vi.fn>;
+  };
   let service: LicensesService;
 
   beforeEach(() => {
     users = { findById: vi.fn().mockResolvedValue(target) };
-    licenses = { assign: vi.fn().mockResolvedValue(assignedLicense), countActive: vi.fn() };
+    licenses = {
+      assign: vi.fn().mockResolvedValue(assignedLicense),
+      countActive: vi.fn(),
+      findActiveByUser: vi.fn().mockResolvedValue(assignedLicense),
+      revoke: vi.fn().mockResolvedValue(revokedLicense),
+    };
     service = new LicensesService(
       users as unknown as UserRepository,
       licenses as unknown as LicenseRepository,
@@ -92,5 +109,43 @@ describe('LicensesService', () => {
     licenses.assign.mockRejectedValue(new CompanyNotFoundError());
 
     await expect(service.assign(admin, dto)).rejects.toThrow(NotFoundException);
+  });
+
+  describe('revoke', () => {
+    it('revokes the active license of a user in the admin company', async () => {
+      const result = await service.revoke(admin, 'user-2');
+
+      expect(licenses.findActiveByUser).toHaveBeenCalledWith({
+        userId: 'user-2',
+        companyId: 'company-1',
+      });
+      expect(licenses.revoke).toHaveBeenCalledWith('license-1');
+      expect(result).toEqual({
+        success: true,
+        message: 'License revoked successfully',
+        license: revokedLicense,
+      });
+    });
+
+    it('rejects unknown users without touching the license repository', async () => {
+      users.findById.mockResolvedValue(null);
+
+      await expect(service.revoke(admin, 'missing')).rejects.toThrow(NotFoundException);
+      expect(licenses.findActiveByUser).not.toHaveBeenCalled();
+    });
+
+    it('rejects users outside the admin company', async () => {
+      users.findById.mockResolvedValue({ ...target, companyId: 'company-2' });
+
+      await expect(service.revoke(admin, 'user-2')).rejects.toThrow(NotFoundException);
+      expect(licenses.findActiveByUser).not.toHaveBeenCalled();
+    });
+
+    it('conflicts when the user has no active license', async () => {
+      licenses.findActiveByUser.mockResolvedValue(null);
+
+      await expect(service.revoke(admin, 'user-2')).rejects.toThrow(ConflictException);
+      expect(licenses.revoke).not.toHaveBeenCalled();
+    });
   });
 });

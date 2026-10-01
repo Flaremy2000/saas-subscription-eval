@@ -23,6 +23,7 @@ describe('PrismaLicenseRepository', () => {
       findFirst: ReturnType<typeof vi.fn>;
       count: ReturnType<typeof vi.fn>;
       create: ReturnType<typeof vi.fn>;
+      update: ReturnType<typeof vi.fn>;
     };
     $transaction: ReturnType<typeof vi.fn>;
   };
@@ -42,6 +43,7 @@ describe('PrismaLicenseRepository', () => {
           assignedAt: new Date('2026-01-01T00:00:00.000Z'),
           revokedAt: null,
         }),
+        update: vi.fn(),
       },
       $transaction: vi.fn(),
     };
@@ -70,6 +72,7 @@ describe('PrismaLicenseRepository', () => {
       companyId: 'company-1',
       status: 'ACTIVE',
       assignedAt: new Date('2026-01-01T00:00:00.000Z'),
+      revokedAt: null,
     });
   });
 
@@ -112,5 +115,40 @@ describe('PrismaLicenseRepository', () => {
     expect(prisma.license.count).toHaveBeenCalledWith({
       where: { companyId: 'company-1', status: 'ACTIVE' },
     });
+  });
+
+  it('finds the active license of a user scoped to the company', async () => {
+    await repository.findActiveByUser({ userId: 'user-2', companyId: 'company-1' });
+
+    expect(prisma.license.findFirst).toHaveBeenCalledWith({
+      where: { userId: 'user-2', companyId: 'company-1', status: 'ACTIVE' },
+    });
+  });
+
+  it('returns null when the user holds no active license', async () => {
+    await expect(
+      repository.findActiveByUser({ userId: 'user-3', companyId: 'company-1' }),
+    ).resolves.toBeNull();
+  });
+
+  it('marks a license as revoked with a timestamp', async () => {
+    const revokedAt = new Date('2026-02-01T00:00:00.000Z');
+    prisma.license.update = vi.fn().mockResolvedValue({
+      id: 'license-1',
+      userId: 'user-2',
+      companyId: 'company-1',
+      status: 'REVOKED',
+      assignedAt: new Date('2026-01-01T00:00:00.000Z'),
+      revokedAt,
+    });
+
+    const result = await repository.revoke('license-1');
+
+    expect(prisma.license.update).toHaveBeenCalledWith({
+      where: { id: 'license-1' },
+      data: { status: 'REVOKED', revokedAt: expect.any(Date) },
+    });
+    expect(result.status).toBe('REVOKED');
+    expect(result.revokedAt).toBe(revokedAt);
   });
 });

@@ -19,6 +19,7 @@ const ids = {
   revoked: randomUUID(),
   admin2: randomUUID(),
   external: randomUUID(),
+  missing: '11111111-1111-4111-8111-111111111111',
 };
 
 const companies: Company[] = [
@@ -158,5 +159,117 @@ describe('Users API (e2e)', () => {
       ids.admin2,
       ids.external,
     ]);
+  });
+});
+
+describe('User roles (e2e)', () => {
+  let app: INestApplication;
+  let prisma: FakePrisma;
+
+  const admin3 = randomUUID();
+
+  const http = () => request(app.getHttpServer());
+
+  const loginAs = async (email: string): Promise<string> => {
+    const res = await http().post('/api/v1/auth/login').send({ email, password: PASSWORD });
+    expect(res.status).toBe(200);
+    return res.body.accessToken as string;
+  };
+
+  const changeRole = (token: string, userId: string, role: string): request.Test =>
+    http()
+      .patch(`/api/v1/users/${userId}/role`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ role });
+
+  beforeAll(async () => {
+    prisma = new FakePrisma();
+    prisma.companies.push(...companies);
+    prisma.users.push(
+      ...users,
+      buildUser(admin3, 'Gina Admin', 'admin3@empresa.com', 'ADMIN', ids.company2),
+    );
+    app = await createTestApp(prisma);
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('forbids non-admin users', async () => {
+    const token = await loginAs('usuario@empresa.com');
+
+    const res = await changeRole(token, ids.external, 'ADMIN');
+
+    expect(res.status).toBe(403);
+  });
+
+  it('rejects payloads with an unknown role', async () => {
+    const token = await loginAs('admin2@empresa.com');
+
+    const res = await changeRole(token, ids.external, 'SUPERUSER');
+
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects ids that are not uuids', async () => {
+    const token = await loginAs('admin2@empresa.com');
+
+    const res = await changeRole(token, 'not-a-uuid', 'ADMIN');
+
+    expect(res.status).toBe(400);
+  });
+
+  it('promotes a member to admin within the company', async () => {
+    const token = await loginAs('admin2@empresa.com');
+
+    const res = await changeRole(token, ids.external, 'ADMIN');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      user: {
+        id: ids.external,
+        email: 'externo@empresa.com',
+        name: 'Fernando Externo',
+        role: 'ADMIN',
+      },
+    });
+    expect(prisma.users.find((user) => user.id === ids.external)?.role).toBe('ADMIN');
+  });
+
+  it('rejects changing your own role', async () => {
+    const token = await loginAs('admin2@empresa.com');
+
+    const res = await changeRole(token, ids.admin2, 'USER');
+
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ message: 'You cannot change your own role' });
+    expect(prisma.users.find((user) => user.id === ids.admin2)?.role).toBe('ADMIN');
+  });
+
+  it('does not leak users from other companies', async () => {
+    const token = await loginAs('admin2@empresa.com');
+
+    const res = await changeRole(token, ids.member, 'ADMIN');
+
+    expect(res.status).toBe(404);
+  });
+
+  it('rejects unknown users', async () => {
+    const token = await loginAs('admin2@empresa.com');
+
+    const res = await changeRole(token, ids.missing, 'ADMIN');
+
+    expect(res.status).toBe(404);
+  });
+
+  it('demotes an admin when other admins remain', async () => {
+    const token = await loginAs('admin2@empresa.com');
+
+    const res = await changeRole(token, admin3, 'USER');
+
+    expect(res.status).toBe(200);
+    expect(res.body.user).toMatchObject({ role: 'USER' });
+    expect(prisma.users.find((user) => user.id === admin3)?.role).toBe('USER');
   });
 });

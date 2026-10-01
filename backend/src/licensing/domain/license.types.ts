@@ -6,6 +6,7 @@ export interface AssignedLicense {
   companyId: string;
   status: LicenseStatus;
   assignedAt: Date;
+  revokedAt: Date | null;
 }
 
 export interface LicenseAssignment {

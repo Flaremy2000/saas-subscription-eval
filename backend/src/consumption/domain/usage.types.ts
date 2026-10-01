@@ -22,3 +22,16 @@ export interface UsageReport {
   daily: { date: string; apiCalls: number }[];
   status: UsageStatus;
 }
+
+export interface PersonalUsageReport {
+  license: {
+    status: 'NONE' | 'ACTIVE' | 'REVOKED';
+    assignedAt: string | null;
+    revokedAt: string | null;
+  };
+  api: {
+    used: number;
+    daily: number;
+  };
+  daily: { date: string; apiCalls: number }[];
+}

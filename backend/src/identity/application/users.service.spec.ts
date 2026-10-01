@@ -1,3 +1,4 @@
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CompanyUser, UserRepository } from '../domain/user.repository.js';
 import { UsersService } from './users.service.js';
@@ -24,11 +25,38 @@ const companyUsers: CompanyUser[] = [
 ];
 
 describe('UsersService', () => {
-  let users: { findCompanyUsers: ReturnType<typeof vi.fn> };
+  let users: {
+    findCompanyUsers: ReturnType<typeof vi.fn>;
+    findById: ReturnType<typeof vi.fn>;
+    countAdmins: ReturnType<typeof vi.fn>;
+    updateRole: ReturnType<typeof vi.fn>;
+  };
   let service: UsersService;
 
+  const actor: Express.User = {
+    sub: 'admin-1',
+    email: 'admin@empresa.com',
+    name: 'Ana Admin',
+    role: 'ADMIN',
+    companyId: 'company-1',
+  };
+
+  const target = {
+    id: 'user-2',
+    email: 'user@empresa.com',
+    name: 'Luis User',
+    role: 'USER' as const,
+    companyId: 'company-1',
+    passwordHash: 'hash',
+  };
+
   beforeEach(() => {
-    users = { findCompanyUsers: vi.fn().mockResolvedValue(companyUsers) };
+    users = {
+      findCompanyUsers: vi.fn().mockResolvedValue(companyUsers),
+      findById: vi.fn().mockResolvedValue(target),
+      countAdmins: vi.fn().mockResolvedValue(2),
+      updateRole: vi.fn().mockResolvedValue({ ...target, role: 'ADMIN' }),
+    };
     service = new UsersService(users as unknown as UserRepository);
   });
 
@@ -60,5 +88,70 @@ describe('UsersService', () => {
     users.findCompanyUsers.mockResolvedValue([]);
 
     await expect(service.listCompanyUsers('empty-company')).resolves.toEqual([]);
+  });
+
+  describe('updateRole', () => {
+    it('promotes a user within the admin company', async () => {
+      const result = await service.updateRole(actor, 'user-2', 'ADMIN');
+
+      expect(users.updateRole).toHaveBeenCalledWith({ id: 'user-2', role: 'ADMIN' });
+      expect(result.user).toEqual({
+        id: 'user-2',
+        email: 'user@empresa.com',
+        name: 'Luis User',
+        role: 'ADMIN',
+      });
+    });
+
+    it('demotes an admin when other admins remain', async () => {
+      users.findById.mockResolvedValue({ ...target, id: 'user-3', role: 'ADMIN' });
+      users.countAdmins.mockResolvedValue(3);
+      users.updateRole.mockResolvedValue({ ...target, id: 'user-3', role: 'USER' });
+
+      const result = await service.updateRole(actor, 'user-3', 'USER');
+
+      expect(users.updateRole).toHaveBeenCalledWith({ id: 'user-3', role: 'USER' });
+      expect(result.user.role).toBe('USER');
+    });
+
+    it('rejects unknown users', async () => {
+      users.findById.mockResolvedValue(null);
+
+      await expect(service.updateRole(actor, 'missing', 'ADMIN')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(users.updateRole).not.toHaveBeenCalled();
+    });
+
+    it('rejects users outside the admin company', async () => {
+      users.findById.mockResolvedValue({ ...target, companyId: 'company-2' });
+
+      await expect(service.updateRole(actor, target.id, 'ADMIN')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(users.updateRole).not.toHaveBeenCalled();
+    });
+
+    it('rejects changing your own role', async () => {
+      users.findById.mockResolvedValue({ ...target, id: 'admin-1' });
+
+      await expect(service.updateRole(actor, 'admin-1', 'USER')).rejects.toThrow(ConflictException);
+      expect(users.updateRole).not.toHaveBeenCalled();
+    });
+
+    it('rejects demoting the last admin of the company', async () => {
+      users.findById.mockResolvedValue({ ...target, id: 'user-3', role: 'ADMIN' });
+      users.countAdmins.mockResolvedValue(1);
+
+      await expect(service.updateRole(actor, 'user-3', 'USER')).rejects.toThrow(ConflictException);
+      expect(users.updateRole).not.toHaveBeenCalled();
+      expect(users.countAdmins).toHaveBeenCalledWith('company-1');
+    });
+
+    it('does not count admins when promoting a plain user', async () => {
+      await service.updateRole(actor, 'user-2', 'ADMIN');
+
+      expect(users.countAdmins).not.toHaveBeenCalled();
+    });
   });
 });

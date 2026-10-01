@@ -22,29 +22,31 @@ enum LicenseStatus {
 
 // Corporate client with contracted limits (seats and API usage)
 model Company {
-  id           String        @id @default(uuid())
-  name         String        @unique
-  apiLimit     Int           @default(100000)
-  licenseLimit Int           @default(50)
-  createdAt    DateTime      @default(now())
-  users        User[]
-  licenses     License[]
-  usageMetrics UsageMetric[]
+  id                String            @id @default(uuid())
+  name              String            @unique
+  apiLimit          Int               @default(100000)
+  licenseLimit      Int               @default(50)
+  createdAt         DateTime          @default(now())
+  users             User[]
+  licenses          License[]
+  usageMetrics      UsageMetric[]
+  userUsageMetrics  UserUsageMetric[]
 
   @@map("companies")
 }
 
 // End-user of a corporate client, identified by JWT role
 model User {
-  id           String    @id @default(uuid())
-  email        String    @unique
+  id           String            @id @default(uuid())
+  email        String            @unique
   passwordHash String
   name         String
-  role         Role      @default(USER)
-  createdAt    DateTime  @default(now())
-  company      Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  role         Role              @default(USER)
+  createdAt    DateTime          @default(now())
+  company      Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   companyId    String
   licenses     License[]
+  usageMetrics UserUsageMetric[]
 
   @@index([companyId])
   @@map("users")
@@ -76,4 +78,21 @@ model UsageMetric {
 
   @@unique([companyId, date])
   @@map("usage_metrics")
+}
+
+// Per-user daily API consumption feeding the personal usage view.
+// Separate table from UsageMetric (which is unique per company+date) so a
+// company total keeps being one row while per-user rows fan out freely.
+model UserUsageMetric {
+  id        String   @id @default(uuid())
+  date      DateTime @db.Date
+  apiCalls  Int      @default(0)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId String
+
+  @@unique([companyId, userId, date])
+  @@index([userId, date])
+  @@map("user_usage_metrics")
 }

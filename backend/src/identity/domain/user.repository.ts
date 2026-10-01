@@ -22,6 +22,8 @@ export interface UserRepository {
   findByEmail(email: string): Promise<UserRecord | null>;
   findById(id: string): Promise<UserRecord | null>;
   findCompanyUsers(companyId: string): Promise<CompanyUser[]>;
+  countAdmins(companyId: string): Promise<number>;
+  updateRole(params: { id: string; role: Role }): Promise<UserRecord>;
 }
 
 export const USER_REPOSITORY = Symbol('UserRepository');

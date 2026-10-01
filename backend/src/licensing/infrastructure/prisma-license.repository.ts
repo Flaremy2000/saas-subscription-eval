@@ -49,9 +49,24 @@ export class PrismaLicenseRepository implements LicenseRepository {
           companyId: license.companyId,
           status: license.status,
           assignedAt: license.assignedAt,
+          revokedAt: license.revokedAt,
         };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
+  }
+
+  findActiveByUser(params: { userId: string; companyId: string }): Promise<AssignedLicense | null> {
+    return this.prisma.license.findFirst({
+      where: { userId: params.userId, companyId: params.companyId, status: 'ACTIVE' },
+    });
+  }
+
+  async revoke(id: string): Promise<AssignedLicense> {
+    const revokedAt = new Date();
+    return this.prisma.license.update({
+      where: { id },
+      data: { status: 'REVOKED', revokedAt },
+    });
   }
 }

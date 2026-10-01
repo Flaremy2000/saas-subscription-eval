@@ -3,6 +3,7 @@ import { CurrentUser } from '../../shared/presentation/decorators/current-user.d
 import { Roles } from '../../shared/presentation/decorators/roles.decorator.js';
 import type { LicenseAssignment } from '../domain/license.types.js';
 import { AssignLicenseRequest } from './dto/assign-license.request.js';
+import { RevokeLicenseRequest } from './dto/revoke-license.request.js';
 import { LicensesService } from '../application/licenses.service.js';
 
 @Controller('licenses')
@@ -17,5 +18,15 @@ export class LicensesController {
     @Body() body: AssignLicenseRequest,
   ): Promise<LicenseAssignment> {
     return this.licensesService.assign(admin, body);
+  }
+
+  @Post('revoke')
+  @Roles('ADMIN')
+  @HttpCode(HttpStatus.OK)
+  revoke(
+    @CurrentUser() admin: Express.User,
+    @Body() body: RevokeLicenseRequest,
+  ): Promise<LicenseAssignment> {
+    return this.licensesService.revoke(admin, body.userId);
   }
 }
