@@ -13,9 +13,10 @@ asignar licencias de forma optimista desde el panel.
 
 ## Índice
 
-- [Arquitectura](#arquitectura)
+- [Arquitectura de infraestructura](#arquitectura-de-infraestructura)
+- [Arquitectura de software](#arquitectura-de-software)
 - [Stack tecnológico](#stack-tecnológico)
-- [Puesta en marcha (Docker)](#puesta-en-marcha-docker)
+- [Puesta en marcha (un solo comando)](#puesta-en-marcha-un-solo-comando)
 - [Ejecución manual sin Docker](#ejecución-manual-sin-docker)
 - [Variables de entorno](#variables-de-entorno)
 - [Base de datos](#base-de-datos)
@@ -25,11 +26,12 @@ asignar licencias de forma optimista desde el panel.
 - [Pruebas y cobertura](#pruebas-y-cobertura)
 - [CI/CD](#cicd)
 - [Estructura del proyecto](#estructura-del-proyecto)
+- [Supuestos](#supuestos)
 - [Decisiones técnicas](#decisiones-técnicas)
 
 ---
 
-## Arquitectura
+## Arquitectura de infraestructura
 
 ```
                       ┌─────────────────────────────────────────────┐
@@ -53,6 +55,59 @@ asignar licencias de forma optimista desde el panel.
 - El frontend también funciona detrás de `docker compose` y en build de producción
   (el proxy solo aplica al dev server).
 
+## Arquitectura de software
+
+El backend sigue una **arquitectura hexagonal ligera (puertos y adaptadores)** organizada
+por **bounded contexts**, con las reglas de Clean Architecture y DDD aplicadas al mínimo
+necesario para el tamaño del proyecto:
+
+```
+backend/src/
+├── shared/            # Dominio y abstrucciones transversales
+│   ├── domain/            # Role (tipos de rol compartidos)
+│   ├── presentation/      # HealthController + decoradores (@Public, @Roles, @CurrentUser)
+│   └── infrastructure/    # PrismaModule/Service, JwtAuthGuard, RolesGuard,
+│                          # AllExceptionsFilter (puertos y adaptadores comunes)
+├── identity/          # Contexto: identidad y acceso (login, usuarios, roles)
+│   ├── domain/            # entidades User/Company + puertos UserRepository,
+│   │                      # PasswordHasher, TokenProvider (interfaces + symbols DI)
+│   ├── application/       # AuthService, UsersService (casos de uso; traducen
+│   │                      # errores de dominio a excepciones HTTP)
+│   ├── infrastructure/    # adaptadores: PrismaUserRepository, BcryptPasswordHasher,
+│   │                      # JwtTokenProvider, JwtStrategy
+│   └── presentation/      # AuthController, UsersController + DTOs validados
+├── licensing/         # Contexto: ciclo de vida de licencias (asignar/límites)
+│   ├── domain/            # LicenseStatus + LicenseRepository (puertos),
+│   │                      # DuplicateLicenseError/SeatLimitReachedError/...
+│   ├── application/       # LicensesService (casos de uso con transacciones)
+│   ├── infrastructure/    # PrismaLicenseRepository (adaptador con tx serializable)
+│   └── presentation/      # LicensesController + DTOs
+└── consumption/       # Contexto: consumo de API y reportes
+    ├── domain/            # UsageReport + UsageRepository (puertos)
+    ├── application/       # UsageService
+    ├── infrastructure/    # PrismaUsageRepository
+    └── presentation/      # UsageController
+```
+
+**Reglas aplicadas:**
+
+- El **dominio y la aplicación nunca importan Prisma ni Nest** (solo tipos puros e
+  interfaces); el único punto que conoce la base de datos son los adaptadores bajo
+  `*/infrastructure/*` — verificable con
+  `grep -r "generated/prisma" src | grep -v infrastructure` (debe estar vacío).
+- Los puertos se inyectan como **symbols** (`USER_REPOSITORY`, `LICENSE_REPOSITORY`,
+  `USAGE_REPOSITORY`, `PASSWORD_HASHER`, `TOKEN_PROVIDER`) y los módulos los enlazan con
+  `useClass` — cambiar de persistencia o de hasher no toca los casos de uso.
+- Los **errores de dominio** (`DuplicateLicenseError`, `SeatLimitReachedError`,
+  `CompanyNotFoundError`) se traducen a excepciones HTTP en la capa de aplicación, no en
+  el controlador.
+- Los **módulos por contexto** (`IdentityModule`, `LicensingModule`,
+  `ConsumptionModule`) exponen solo lo necesario: `LicensingModule` importa
+  `IdentityModule` para resolver `USER_REPOSITORY` (evita acoplamiento circular).
+- **Why PostgreSQL**: relaciones reales con integridad referencial (FK + `@@unique`),
+  transacciones `SERIALIZABLE` para el asiento de licencias y Prisma como capa tipada
+  sobre ella; para este volumen, una DB relacional en Docker es lo simple y comprobable.
+
 ## Stack tecnológico
 
 | Capa      | Tecnologías                                                            |
@@ -63,21 +118,18 @@ asignar licencias de forma optimista desde el panel.
 | Calidad   | Vitest (unit + e2e), ESLint, oxlint, Prettier, vue-tsc, tsc            |
 | Infra     | Docker Compose, GitHub Actions CI                                       |
 
-## Puesta en marcha (Docker)
+## Puesta en marcha (un solo comando)
 
 **Requisitos**: [Docker Desktop](https://www.docker.com/products/docker-desktop/) (incluye
 `docker compose` v2) con el daemon en ejecución.
 
 ```bash
-# 1. Levantar todo (db, backend, frontend, pgadmin)
 docker compose up -d --build
-
-# 2. Aplicar migraciones y datos de ejemplo (solo la primera vez o al reiniciar la DB)
-docker compose exec backend pnpm db:migrate
-docker compose exec backend pnpm db:seed
 ```
 
-Luego abre **http://localhost:5173** e inicia sesión con cualquier usuario de
+Ese único comando levanta **PostgreSQL + backend + frontend + pgAdmin**: el backend
+aplica migraciones (`db:deploy`) y siembra los datos de ejemplo (`db:seed`) automáticamente
+al arrancar. Luego abre **http://localhost:5173** e inicia sesión con cualquier usuario de
 [demostración](#usuarios-de-demostración).
 
 | Servicio            | URL                          | Puerto    |
@@ -262,7 +314,7 @@ como **threshold de Vitest**: el comando falla si baja del mínimo.
 # Backend (unit + e2e sin BD: usa un fake de Prisma)
 cd backend
 pnpm test:coverage
-# 65 tests · 99%+ stmts · 95%+ branches
+# 76 tests · 98%+ stmts · 95%+ branches
 
 # Frontend (jsdom + @vue/test-utils)
 cd frontend
@@ -291,12 +343,10 @@ paralelos (`pnpm` + caché):
 │   │   ├── migrations/            # migraciones versionadas
 │   │   └── seed.ts                # datos de ejemplo
 │   ├── src/
-│   │   ├── auth/                  # login JWT, guards @Public/@Roles, decorators
-│   │   ├── common/                # AllExceptionsFilter (envolvente uniforme)
-│   │   ├── licenses/              # POST /licenses/assign (ADMIN)
-│   │   ├── prisma/                # PrismaModule/Service
-│   │   ├── usage/                 # GET /usage
-│   │   ├── users/                 # GET /users
+│   │   ├── shared/                # dominio transversal, Prisma, guards y filters
+│   │   ├── identity/              # login JWT, usuarios, roles (hexagonal)
+│   │   ├── licensing/             # POST /licenses/assign (ADMIN)
+│   │   ├── consumption/           # GET /usage
 │   │   ├── app.module.ts          # pipes, guards y filters globales
 │   │   └── main.ts
 │   └── test/                      # e2e + fakes (sin BD real)
@@ -312,6 +362,27 @@ paralelos (`pnpm` + caché):
 ├── docker-compose.yml
 └── README.md
 ```
+
+## Supuestos
+
+Decisiones tomados ante ambigüedades del enunciado (criterio de evaluación de "Supuestos"):
+
+1. **"Asignar roles" = cambiar el `role` (ADMIN/USER) de un usuario existente**, no crear
+   usuarios nuevos; con salvaguardas (no degradar el último ADMIN de la empresa).
+2. **"Desasignar licencia" = estado `REVOKED` con historial**, no borrado físico: las
+   licencias quedan trazables (`License.status` incluye `REVOKED`/`revokedAt`).
+3. **"Consumo en tiempo real" por usuario**: el `UsageMetric` agregado (por empresa) se
+   complementa con una métrica diaria por usuario, porque el enunciado distingue el punto
+   de vista del usuario (su consumo) del del administrador (el de su empresa).
+4. **No existe cuota/crédito individual de API**: los límites (`callsLimit`) son por
+   empresa; las "alertas" se derivan de los KPIs/progress bars del dashboard (no se
+   inventó una feature de notificaciones push).
+5. **"Consumo de la empresa" = tenant del JWT** (`companyId` del token): `GET /usage` y
+   `GET /users` devuelven siempre los datos de la empresa del usuario autenticado.
+6. **Ventana de consumo**: 30 días (seed y dashboards), consistente con `callsLimit`
+   mensual.
+7. **Reintentos/timeouts de red**: marcados como opcionales en los criterios → fuera de
+   alcance; la resiliencia se cubre con el filtro global de excepciones.
 
 ## Decisiones técnicas
 
