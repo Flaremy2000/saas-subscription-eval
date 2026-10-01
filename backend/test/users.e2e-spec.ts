@@ -139,13 +139,12 @@ describe('Users API (e2e)', () => {
     expect(revoked).toMatchObject({ activeLicenseId: null, licenseAssignedAt: null });
   });
 
-  it('allows regular members to read the company roster', async () => {
+  it('forbids regular members from listing the roster', async () => {
     const token = await loginAs('usuario@empresa.com');
 
     const res = await http().get('/api/v1/users').set('Authorization', `Bearer ${token}`);
 
-    expect(res.status).toBe(200);
-    expect(res.body.users).toHaveLength(4);
+    expect(res.status).toBe(403);
   });
 
   it('does not leak users from other companies', async () => {
