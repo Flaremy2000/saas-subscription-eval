@@ -82,8 +82,8 @@ jobs:
       - name: Typecheck (vue-tsc)
         run: pnpm type-check
 
-      - name: Tests (Vitest)
-        run: pnpm test:run
+      - name: Tests with coverage (Vitest)
+        run: pnpm test:coverage
 
       - name: Build (Vite)
         run: pnpm build
