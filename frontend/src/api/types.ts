@@ -43,5 +43,28 @@ export interface LicenseAssignment {
     companyId: string
     status: 'ACTIVE' | 'REVOKED'
     assignedAt: string
+    revokedAt?: string | null
+  }
+}
+
+export interface PersonalUsageReport {
+  license: {
+    status: 'NONE' | 'ACTIVE' | 'REVOKED'
+    assignedAt: string | null
+    revokedAt: string | null
+  }
+  api: {
+    used: number
+    daily: number
+  }
+  daily: { date: string; apiCalls: number }[]
+}
+
+export interface RoleUpdateResponse {
+  user: {
+    id: string
+    email: string
+    name: string
+    role: Role
   }
 }

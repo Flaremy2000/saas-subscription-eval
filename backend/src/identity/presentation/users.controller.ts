@@ -10,6 +10,7 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
+  @Roles('ADMIN')
   async list(@CurrentUser() user: Express.User): Promise<{ users: CompanyUser[] }> {
     const users = await this.usersService.listCompanyUsers(user.companyId);
     return { users };

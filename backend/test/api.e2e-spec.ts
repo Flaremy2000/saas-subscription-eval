@@ -201,6 +201,14 @@ describe('Usage API (e2e)', () => {
 
     expect(res.status).toBe(401);
   });
+
+  it('forbids non-admin users from the company report', async () => {
+    const token = await loginAs('usuario@empresa.com');
+
+    const res = await http().get('/api/v1/usage').set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(403);
+  });
 });
 
 describe('License assignment (e2e)', () => {

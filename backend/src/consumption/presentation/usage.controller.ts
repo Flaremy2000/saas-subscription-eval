@@ -1,5 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import { CurrentUser } from '../../shared/presentation/decorators/current-user.decorator.js';
+import { Roles } from '../../shared/presentation/decorators/roles.decorator.js';
 import type { PersonalUsageReport, UsageReport } from '../domain/usage.types.js';
 import { UsageService } from '../application/usage.service.js';
 
@@ -8,6 +9,7 @@ export class UsageController {
   constructor(private readonly usageService: UsageService) {}
 
   @Get()
+  @Roles('ADMIN')
   getUsage(@CurrentUser() user: Express.User): Promise<UsageReport> {
     return this.usageService.getUsage(user.companyId);
   }

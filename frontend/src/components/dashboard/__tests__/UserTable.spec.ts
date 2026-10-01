@@ -31,10 +31,24 @@ const users: CompanyUser[] = [
 ]
 
 function mountTable(
-  overrides: Partial<{ canAssign: boolean; assigningUserId: string | null }> = {},
+  overrides: Partial<{
+    canAssign: boolean
+    assigningUserId: string | null
+    updatingRoleUserId: string | null
+    revokingUserId: string | null
+    currentUserId: string | null
+  }> = {},
 ): VueWrapper {
   return mount(UserTable, {
-    props: { users, canAssign: true, assigningUserId: null, ...overrides },
+    props: {
+      users,
+      canAssign: true,
+      assigningUserId: null,
+      updatingRoleUserId: null,
+      revokingUserId: null,
+      currentUserId: 'u1',
+      ...overrides,
+    },
   })
 }
 
@@ -86,17 +100,72 @@ describe('user table', () => {
 
   it('emits the target user when assigning', async () => {
     const wrapper = mountTable()
-    const buttons = wrapper.findAll('tbody button')
+    const diegoRow = wrapper.findAll('tbody tr').find((row) => row.text().includes('Diego Ramos'))
+    const assignButton = diegoRow?.find('button')
 
-    expect(buttons).toHaveLength(2)
-    await buttons[0]?.trigger('click')
+    expect(assignButton?.text()).toBe('Asignar')
+    await assignButton?.trigger('click')
 
     expect(wrapper.emitted('assign')).toEqual([[users[1]]])
+  })
+
+  it('emits the target user when revoking', async () => {
+    const wrapper = mountTable()
+    const anaRow = wrapper.findAll('tbody tr').find((row) => row.text().includes('Ana Admin'))
+    const revokeButton = anaRow?.find('button')
+
+    expect(revokeButton?.text()).toBe('Desasignar')
+    await revokeButton?.trigger('click')
+
+    expect(wrapper.emitted('revoke')).toEqual([[users[0]]])
+  })
+
+  it('emits the new role when the selector changes', async () => {
+    const wrapper = mountTable({ currentUserId: null })
+    const diegoRow = wrapper.findAll('tbody tr').find((row) => row.text().includes('Diego Ramos'))
+    const select = diegoRow?.find('select')
+
+    await select?.setValue('ADMIN')
+
+    expect(wrapper.emitted('changeRole')).toEqual([[users[1], 'ADMIN']])
+  })
+
+  it('keeps the selector unchanged when no new role is picked', async () => {
+    const wrapper = mountTable({ currentUserId: null })
+    const diegoRow = wrapper.findAll('tbody tr').find((row) => row.text().includes('Diego Ramos'))
+    const select = diegoRow?.find('select')
+
+    await select?.setValue('USER')
+
+    expect(wrapper.emitted('changeRole')).toBeUndefined()
+  })
+
+  it('disables the selector of the current user', () => {
+    const wrapper = mountTable()
+    const anaRow = wrapper.findAll('tbody tr').find((row) => row.text().includes('Ana Admin'))
+
+    expect(anaRow?.find('select').attributes('disabled')).toBeDefined()
+  })
+
+  it('disables the selector while the role is being updated', () => {
+    const wrapper = mountTable({ currentUserId: null, updatingRoleUserId: 'u2' })
+    const diegoRow = wrapper.findAll('tbody tr').find((row) => row.text().includes('Diego Ramos'))
+
+    expect(diegoRow?.find('select').attributes('disabled')).toBeDefined()
+  })
+
+  it('disables the revoke button while the license is being revoked', () => {
+    const wrapper = mountTable({ revokingUserId: 'u1' })
+    const anaRow = wrapper.findAll('tbody tr').find((row) => row.text().includes('Ana Admin'))
+
+    expect(anaRow?.find('button').attributes('disabled')).toBeDefined()
+    expect(anaRow?.find('button').text()).toBe('Revocando…')
   })
 
   it('hides assignment actions for read-only viewers', () => {
     const wrapper = mountTable({ canAssign: false })
 
+    expect(wrapper.find('select').exists()).toBe(false)
     expect(wrapper.findAll('tbody button')).toHaveLength(0)
     expect(wrapper.text()).toContain('—')
   })
