@@ -217,8 +217,11 @@ Prefijo global: **`/api/v1`**. Autenticación: header `Authorization: Bearer <to
 | `POST` | `/auth/login`       | público   | `{ email, password }` → `{ accessToken, tokenType, user }`               |
 | `GET`  | `/auth/me`          | JWT       | Perfil del usuario autenticado                                           |
 | `GET`  | `/usage`            | JWT       | Reporte de consumo: empresa, KPIs de licencias, API y serie diaria       |
+| `GET`  | `/usage/me`         | JWT       | Consumo personal: licencia, total/promedio de llamadas y serie de 30 días |
 | `GET`  | `/users`            | JWT       | Usuarios de la empresa con su licencia activa (tenant-scoped por el JWT) |
+| `PATCH` | `/users/:id/role`  | JWT+ADMIN | `{ role: ADMIN\|USER }` — 404 fuera de la empresa, 409 si es tu propio rol o el último admin |
 | `POST` | `/licenses/assign`  | JWT+ADMIN | `{ userId }` → asigna licencia `ACTIVE` (404 si no es de la empresa)     |
+| `POST` | `/licenses/revoke`  | JWT+ADMIN | `{ userId }` → revoca la licencia activa con `revokedAt` (404/409)       |
 
 ### Ejemplos con curl
 
@@ -238,6 +241,19 @@ curl -s http://127.0.0.1:3000/api/v1/users -H "Authorization: Bearer $TOKEN" | j
 curl -s -X POST http://127.0.0.1:3000/api/v1/licenses/assign \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"userId":"<uuid-del-usuario>"}' | jq
+
+# Revocar la licencia activa de un usuario (solo ADMIN)
+curl -s -X POST http://127.0.0.1:3000/api/v1/licenses/revoke \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"userId":"<uuid-del-usuario>"}' | jq
+
+# Cambiar el rol de un usuario (solo ADMIN)
+curl -s -X PATCH http://127.0.0.1:3000/api/v1/users/<uuid-del-usuario>/role \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"role":"ADMIN"}' | jq
+
+# Consumo personal del usuario autenticado (cualquier rol)
+curl -s http://127.0.0.1:3000/api/v1/usage/me -H "Authorization: Bearer $TOKEN" | jq
 ```
 
 ### Manejo de errores
