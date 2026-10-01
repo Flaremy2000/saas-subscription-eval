@@ -86,6 +86,20 @@ describe('UsageService', () => {
     expect(report.usage.availableLicenses).toBe(0);
   });
 
+  it('handles a company without contracted limits', async () => {
+    prisma.company.findUnique.mockResolvedValue({ ...company, apiLimit: 0, licenseLimit: 0 });
+
+    const report = await service.getUsage('company-1');
+
+    expect(report.usage).toMatchObject({
+      totalLicenses: 0,
+      availableLicenses: 0,
+      usagePercentage: 0,
+    });
+    expect(report.api).toMatchObject({ limit: 0, usagePercentage: 0, exceeded: true });
+    expect(report.status).toBe('exceeded');
+  });
+
   it('throws when the company does not exist', async () => {
     prisma.company.findUnique.mockResolvedValue(null);
 

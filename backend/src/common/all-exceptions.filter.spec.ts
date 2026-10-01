@@ -85,6 +85,27 @@ describe('AllExceptionsFilter', () => {
     expect(body).not.toHaveProperty('error');
   });
 
+  it('falls back to the exception message when the payload has none', () => {
+    const { host, json } = buildHost();
+
+    filter.catch(new HttpException({ statusCode: 400, error: 'Bad Request' }, 400), host);
+
+    expect(json).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+    const body = json.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(typeof body.message).toBe('string');
+  });
+
+  it('falls back to the error message when no stack is available', () => {
+    const { host, status } = buildHost();
+    const error = new Error('no stack here');
+    delete error.stack;
+
+    filter.catch(error, host);
+
+    expect(status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR);
+    expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('no stack here'));
+  });
+
   it('maps unique constraint violations to 409', () => {
     const { host, status, json } = buildHost();
     const exception = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
