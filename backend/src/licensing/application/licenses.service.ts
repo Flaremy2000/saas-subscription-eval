@@ -51,4 +51,26 @@ export class LicensesService {
       license,
     };
   }
+
+  async revoke(admin: Express.User, userId: string): Promise<LicenseAssignment> {
+    const target = await this.users.findById(userId);
+    if (!target || target.companyId !== admin.companyId) {
+      throw new NotFoundException('User not found');
+    }
+
+    const active = await this.licenses.findActiveByUser({
+      userId: target.id,
+      companyId: admin.companyId,
+    });
+    if (!active) {
+      throw new ConflictException('User does not have an active license');
+    }
+
+    const license = await this.licenses.revoke(active.id);
+    return {
+      success: true,
+      message: 'License revoked successfully',
+      license,
+    };
+  }
 }

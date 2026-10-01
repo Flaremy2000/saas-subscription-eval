@@ -15,6 +15,7 @@ describe('UsageService', () => {
     getCompany: ReturnType<typeof vi.fn>;
     countActiveLicenses: ReturnType<typeof vi.fn>;
     getDailyMetrics: ReturnType<typeof vi.fn>;
+    getPersonalUsage: ReturnType<typeof vi.fn>;
   };
   let service: UsageService;
 
@@ -26,6 +27,17 @@ describe('UsageService', () => {
         { date: '2026-09-29', apiCalls: 300 },
         { date: '2026-09-30', apiCalls: 500 },
       ]),
+      getPersonalUsage: vi.fn().mockResolvedValue({
+        license: {
+          status: 'ACTIVE',
+          assignedAt: '2026-01-01T00:00:00.000Z',
+          revokedAt: null,
+        },
+        daily: [
+          { date: '2026-09-29', apiCalls: 100 },
+          { date: '2026-09-30', apiCalls: 260 },
+        ],
+      }),
     };
     service = new UsageService(repository as unknown as UsageRepository);
   });
@@ -97,5 +109,48 @@ describe('UsageService', () => {
     repository.getCompany.mockResolvedValue(null);
 
     await expect(service.getUsage('missing')).rejects.toThrow(NotFoundException);
+  });
+
+  describe('getPersonalUsage', () => {
+    it('reports the personal series with license status and daily average', async () => {
+      const report = await service.getPersonalUsage('company-1', 'user-1');
+
+      expect(repository.getPersonalUsage).toHaveBeenCalledWith({
+        companyId: 'company-1',
+        userId: 'user-1',
+        since: expect.any(Date),
+      });
+      expect(report.license.status).toBe('ACTIVE');
+      expect(report.api).toEqual({ used: 360, daily: 180 });
+      expect(report.daily).toHaveLength(2);
+    });
+
+    it('reports a missing license as NONE', async () => {
+      repository.getPersonalUsage.mockResolvedValue({
+        license: { status: 'NONE', assignedAt: null, revokedAt: null },
+        daily: [{ date: '2026-09-30', apiCalls: 40 }],
+      });
+
+      const report = await service.getPersonalUsage('company-1', 'user-without-license');
+
+      expect(report.license).toEqual({ status: 'NONE', assignedAt: null, revokedAt: null });
+      expect(report.api).toEqual({ used: 40, daily: 40 });
+    });
+
+    it('handles a user with no metrics in the window', async () => {
+      repository.getPersonalUsage.mockResolvedValue({
+        license: {
+          status: 'REVOKED',
+          assignedAt: '2026-01-01T00:00:00.000Z',
+          revokedAt: '2026-02-01T00:00:00.000Z',
+        },
+        daily: [],
+      });
+
+      const report = await service.getPersonalUsage('company-1', 'user-1');
+
+      expect(report.api).toEqual({ used: 0, daily: 0 });
+      expect(report.daily).toEqual([]);
+    });
   });
 });

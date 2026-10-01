@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { USAGE_REPOSITORY, type UsageRepository } from '../domain/usage.repository.js';
-import type { UsageReport } from '../domain/usage.types.js';
+import type { PersonalUsageReport, UsageReport } from '../domain/usage.types.js';
 
 const USAGE_WINDOW_DAYS = 30;
 
@@ -50,6 +50,20 @@ export class UsageService {
       daily,
       status:
         apiUsed > company.apiLimit ? 'exceeded' : apiUsagePercentage >= 80 ? 'warning' : 'healthy',
+    };
+  }
+
+  async getPersonalUsage(companyId: string, userId: string): Promise<PersonalUsageReport> {
+    const since = new Date(Date.now() - USAGE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+    const { license, daily } = await this.usage.getPersonalUsage({ companyId, userId, since });
+
+    const apiUsed = daily.reduce((total, metric) => total + metric.apiCalls, 0);
+    const apiDaily = daily.length > 0 ? Math.round(apiUsed / daily.length) : 0;
+
+    return {
+      license,
+      api: { used: apiUsed, daily: apiDaily },
+      daily,
     };
   }
 }

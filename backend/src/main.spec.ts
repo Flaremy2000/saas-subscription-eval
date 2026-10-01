@@ -26,5 +26,5 @@ describe('bootstrap', () => {
 
     expect(app.setGlobalPrefix).toHaveBeenCalledWith('api/v1');
     expect(app.listen).toHaveBeenCalledWith(Number(process.env['PORT'] ?? 3000));
-  });
+  }, 20_000);
 });

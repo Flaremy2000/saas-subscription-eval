@@ -3,7 +3,13 @@ import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { Company, License, UsageMetric, User } from '../src/generated/prisma/client.js';
+import type {
+  Company,
+  License,
+  UsageMetric,
+  User,
+  UserUsageMetric,
+} from '../src/generated/prisma/client.js';
 import { createTestApp } from './create-app.js';
 import { FakePrisma } from './fakes/prisma.fake.js';
 
@@ -92,6 +98,11 @@ const usageMetrics: UsageMetric[] = [
   { id: 'm-5', companyId: ids.company2, date: daysAgo(0), apiCalls: 900 },
 ];
 
+const userUsageMetrics: UserUsageMetric[] = [
+  { id: 'um-1', userId: ids.licensed, companyId: ids.company1, date: daysAgo(2), apiCalls: 120 },
+  { id: 'um-2', userId: ids.licensed, companyId: ids.company1, date: daysAgo(1), apiCalls: 180 },
+];
+
 describe('Usage API (e2e)', () => {
   let app: INestApplication;
   let prisma: FakePrisma;
@@ -110,6 +121,7 @@ describe('Usage API (e2e)', () => {
     prisma.users.push(...users);
     prisma.licenses.push(...licenses);
     prisma.usageMetrics.push(...usageMetrics);
+    prisma.userUsageMetrics.push(...userUsageMetrics);
     app = await createTestApp(prisma);
   });
 
@@ -156,6 +168,38 @@ describe('Usage API (e2e)', () => {
       status: 'warning',
     });
     expect(res.body.daily).toHaveLength(1);
+  });
+
+  it('returns the personal series and license for the authenticated user', async () => {
+    const token = await loginAs('licenciado@empresa.com');
+
+    const res = await http().get('/api/v1/usage/me').set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.license).toMatchObject({ status: 'ACTIVE', revokedAt: null });
+    expect(res.body.api).toEqual({ used: 300, daily: 150 });
+    expect(res.body.daily).toHaveLength(2);
+    expect(res.body.daily[0]).toMatchObject({
+      date: daysAgo(2).toISOString().slice(0, 10),
+      apiCalls: 120,
+    });
+  });
+
+  it('reports NONE for a user who never had a license', async () => {
+    const token = await loginAs('usuario@empresa.com');
+
+    const res = await http().get('/api/v1/usage/me').set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.license).toEqual({ status: 'NONE', assignedAt: null, revokedAt: null });
+    expect(res.body.api).toEqual({ used: 0, daily: 0 });
+    expect(res.body.daily).toEqual([]);
+  });
+
+  it('rejects anonymous personal usage requests', async () => {
+    const res = await http().get('/api/v1/usage/me');
+
+    expect(res.status).toBe(401);
   });
 });
 
@@ -255,5 +299,94 @@ describe('License assignment (e2e)', () => {
 
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ message: 'License limit reached' });
+  });
+});
+
+describe('License revocation (e2e)', () => {
+  let app: INestApplication;
+  let prisma: FakePrisma;
+
+  const http = () => request(app.getHttpServer());
+
+  const loginAs = async (email: string): Promise<string> => {
+    const res = await http().post('/api/v1/auth/login').send({ email, password: PASSWORD });
+    expect(res.status).toBe(200);
+    return res.body.accessToken as string;
+  };
+
+  const revoke = (token: string, userId: string): request.Test =>
+    http().post('/api/v1/licenses/revoke').set('Authorization', `Bearer ${token}`).send({ userId });
+
+  beforeAll(async () => {
+    prisma = new FakePrisma();
+    prisma.companies.push(...companies);
+    prisma.users.push(...users);
+    prisma.licenses.push({
+      id: 'revoke-target',
+      status: 'ACTIVE',
+      assignedAt: new Date('2026-01-05T00:00:00.000Z'),
+      revokedAt: null,
+      userId: ids.licensed,
+      companyId: ids.company1,
+    });
+    app = await createTestApp(prisma);
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('forbids non-admin users', async () => {
+    const token = await loginAs('usuario@empresa.com');
+
+    const res = await revoke(token, ids.licensed);
+
+    expect(res.status).toBe(403);
+  });
+
+  it('rejects payloads that fail validation', async () => {
+    const token = await loginAs('admin@empresa.com');
+
+    const res = await revoke(token, 'not-a-uuid');
+
+    expect(res.status).toBe(400);
+  });
+
+  it('marks the active license as revoked with a timestamp', async () => {
+    const token = await loginAs('admin@empresa.com');
+
+    const res = await revoke(token, ids.licensed);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      success: true,
+      message: 'License revoked successfully',
+      license: {
+        id: 'revoke-target',
+        userId: ids.licensed,
+        status: 'REVOKED',
+        revokedAt: expect.any(String),
+      },
+    });
+    expect(prisma.licenses.find((license) => license.id === 'revoke-target')).toMatchObject({
+      status: 'REVOKED',
+    });
+  });
+
+  it('conflicts when the user holds no active license', async () => {
+    const token = await loginAs('admin@empresa.com');
+
+    const res = await revoke(token, ids.regular);
+
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ message: 'User does not have an active license' });
+  });
+
+  it('does not leak users from other companies', async () => {
+    const token = await loginAs('admin@empresa.com');
+
+    const res = await revoke(token, ids.external);
+
+    expect(res.status).toBe(404);
   });
 });

@@ -3,6 +3,8 @@ import type { AssignedLicense } from './license.types.js';
 export interface LicenseRepository {
   countActive(companyId: string): Promise<number>;
   assign(params: { userId: string; companyId: string }): Promise<AssignedLicense>;
+  findActiveByUser(params: { userId: string; companyId: string }): Promise<AssignedLicense | null>;
+  revoke(id: string): Promise<AssignedLicense>;
 }
 
 export const LICENSE_REPOSITORY = Symbol('LicenseRepository');

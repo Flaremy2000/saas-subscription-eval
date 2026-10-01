@@ -3,8 +3,10 @@ import type {
   Company,
   License,
   LicenseStatus,
+  Role,
   UsageMetric,
   User,
+  UserUsageMetric,
 } from '../../src/generated/prisma/client.js';
 
 interface UniqueWhere {
@@ -16,6 +18,12 @@ interface LicenseWhere {
   companyId?: string;
   userId?: string;
   status?: LicenseStatus;
+}
+
+interface LicenseFindFirstArgs {
+  where: LicenseWhere;
+  orderBy?: Array<{ status?: 'asc' | 'desc' } | { assignedAt?: 'asc' | 'desc' }>;
+  select?: { status?: boolean; assignedAt?: boolean; revokedAt?: boolean };
 }
 
 interface FindManyArgs {
@@ -48,6 +56,7 @@ export class FakePrisma {
   users: User[] = [];
   licenses: License[] = [];
   usageMetrics: UsageMetric[] = [];
+  userUsageMetrics: UserUsageMetric[] = [];
 
   user = {
     findUnique: async ({ where }: { where: UniqueWhere }): Promise<User | null> => {
@@ -80,6 +89,26 @@ export class FakePrisma {
         return { ...user, licenses };
       });
     },
+    count: async ({ where }: { where: { companyId: string; role?: Role } }): Promise<number> =>
+      this.users.filter(
+        (user) =>
+          user.companyId === where.companyId &&
+          (where.role === undefined || user.role === where.role),
+      ).length,
+    update: async ({
+      where,
+      data,
+    }: {
+      where: { id: string };
+      data: { role: Role };
+    }): Promise<User> => {
+      const user = this.users.find((candidate) => candidate.id === where.id);
+      if (!user) {
+        throw new Error('Record to update not found.');
+      }
+      user.role = data.role;
+      return user;
+    },
   };
 
   company = {
@@ -88,12 +117,23 @@ export class FakePrisma {
   };
 
   license = {
-    findFirst: async ({ where }: { where: LicenseWhere }): Promise<License | null> =>
-      this.licenses.find(
+    findFirst: async (args: LicenseFindFirstArgs): Promise<License | null> => {
+      const rows = this.licenses.filter(
         (license) =>
-          license.userId === where.userId &&
-          (where.status === undefined || license.status === where.status),
-      ) ?? null,
+          license.userId === args.where.userId &&
+          (args.where.companyId === undefined || license.companyId === args.where.companyId) &&
+          (args.where.status === undefined || license.status === args.where.status),
+      );
+      if (args.orderBy?.some((clause) => 'status' in clause && clause.status === 'asc')) {
+        rows.sort(
+          (a, b) =>
+            a.status.localeCompare(b.status) || b.assignedAt.getTime() - a.assignedAt.getTime(),
+        );
+      } else {
+        rows.sort((a, b) => b.assignedAt.getTime() - a.assignedAt.getTime());
+      }
+      return rows[0] ?? null;
+    },
     count: async ({ where }: { where: LicenseWhere }): Promise<number> =>
       this.licenses.filter(
         (license) =>
@@ -112,12 +152,47 @@ export class FakePrisma {
       this.licenses.push(license);
       return license;
     },
+    update: async ({
+      where,
+      data,
+    }: {
+      where: { id: string };
+      data: { status: LicenseStatus; revokedAt: Date };
+    }): Promise<License> => {
+      const license = this.licenses.find((candidate) => candidate.id === where.id);
+      if (!license) {
+        throw new Error('Record to update not found.');
+      }
+      license.status = data.status;
+      license.revokedAt = data.revokedAt;
+      return license;
+    },
   };
 
   usageMetric = {
     findMany: async (args: FindManyArgs): Promise<UsageMetric[]> => {
       const rows = this.usageMetrics.filter(
         (metric) => metric.companyId === args.where.companyId && metric.date >= args.where.date.gte,
+      );
+      rows.sort((a, b) => a.date.getTime() - b.date.getTime());
+      if (args.orderBy?.date === 'desc') {
+        rows.reverse();
+      }
+      return rows;
+    },
+  };
+
+  userUsageMetric = {
+    findMany: async (args: {
+      where: { companyId: string; userId: string; date: { gte: Date } };
+      orderBy?: { date: 'asc' | 'desc' };
+      select?: { date?: boolean; apiCalls?: boolean };
+    }): Promise<UserUsageMetric[]> => {
+      const rows = this.userUsageMetrics.filter(
+        (metric) =>
+          metric.companyId === args.where.companyId &&
+          metric.userId === args.where.userId &&
+          metric.date >= args.where.date.gte,
       );
       rows.sort((a, b) => a.date.getTime() - b.date.getTime());
       if (args.orderBy?.date === 'desc') {
