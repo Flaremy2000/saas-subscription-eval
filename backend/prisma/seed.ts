@@ -124,6 +124,30 @@ async function main() {
     });
   }
 
+  for (const user of users) {
+    for (let i = 29; i >= 0; i--) {
+      const date = new Date(today);
+      date.setUTCDate(date.getUTCDate() - i);
+      const weekday = date.getUTCDay();
+      const personal =
+        weekday === 0 || weekday === 6 ? 0 : 60 + ((user.email.length * 7 + i * 53) % 340);
+
+      await prisma.userUsageMetric.upsert({
+        where: {
+          companyId_userId_date: { companyId: company.id, userId: user.id, date },
+        },
+        update: { apiCalls: personal },
+        create: {
+          id: randomUUID(),
+          companyId: company.id,
+          userId: user.id,
+          date,
+          apiCalls: personal,
+        },
+      });
+    }
+  }
+
   const usage = await prisma.usageMetric.aggregate({
     where: { companyId: company.id },
     _sum: { apiCalls: true },
