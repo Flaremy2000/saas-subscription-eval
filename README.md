@@ -216,9 +216,9 @@ Prefijo global: **`/api/v1`**. Autenticación: header `Authorization: Bearer <to
 | `GET`  | `/health`           | público   | Health check → `{ status: "ok", timestamp }`                             |
 | `POST` | `/auth/login`       | público   | `{ email, password }` → `{ accessToken, tokenType, user }`               |
 | `GET`  | `/auth/me`          | JWT       | Perfil del usuario autenticado                                           |
-| `GET`  | `/usage`            | JWT       | Reporte de consumo: empresa, KPIs de licencias, API y serie diaria       |
+| `GET`  | `/usage`            | JWT+ADMIN | Reporte de consumo: empresa, KPIs de licencias, API y serie diaria (403 para `USER`) |
 | `GET`  | `/usage/me`         | JWT       | Consumo personal: licencia, total/promedio de llamadas y serie de 30 días |
-| `GET`  | `/users`            | JWT       | Usuarios de la empresa con su licencia activa (tenant-scoped por el JWT) |
+| `GET`  | `/users`            | JWT+ADMIN | Usuarios de la empresa con su licencia activa (tenant-scoped por el JWT, 403 para `USER`) |
 | `PATCH` | `/users/:id/role`  | JWT+ADMIN | `{ role: ADMIN\|USER }` — 404 fuera de la empresa, 409 si es tu propio rol o el último admin |
 | `POST` | `/licenses/assign`  | JWT+ADMIN | `{ userId }` → asigna licencia `ACTIVE` (404 si no es de la empresa)     |
 | `POST` | `/licenses/revoke`  | JWT+ADMIN | `{ userId }` → revoca la licencia activa con `revokedAt` (404/409)       |
@@ -231,10 +231,10 @@ TOKEN=$(curl -s -X POST http://127.0.0.1:3000/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@empresa.com","password":"Password123!"}' | jq -r .accessToken)
 
-# Consumo
+# Consumo (solo ADMIN)
 curl -s http://127.0.0.1:3000/api/v1/usage -H "Authorization: Bearer $TOKEN" | jq
 
-# Usuarios de la empresa
+# Usuarios de la empresa (solo ADMIN)
 curl -s http://127.0.0.1:3000/api/v1/users -H "Authorization: Bearer $TOKEN" | jq
 
 # Asignar licencia a un usuario (solo ADMIN)
@@ -283,15 +283,20 @@ Validación de entrada con `class-validator` en todos los DTOs y
 - **Rutas** (con guards): `/login` (solo invitados) y `/` (dashboard, requiere sesión);
   los intentos con redirect se sanitizan contra open-redirects y una sesión `401`
   cierra la sesión y redirige al login.
-- **`DashboardView`**: banner de estado (`healthy`/`warning`/`exceeded`), tarjetas de
-  KPI (consumo API, licencias usadas/disponibles) con progress bars, **gráfico de línea**
+- **`DashboardView` por rol**: los `ADMIN` ven pestañas **Empresa | Mi consumo** —
+  *Empresa* con banner de estado (`healthy`/`warning`/`exceeded`), tarjetas de KPI
+  (consumo API, licencias usadas/disponibles) con progress bars, **gráfico de línea**
   del consumo diario (registrado bajo `defineAsyncComponent` → se sirve como **chunk
   separado** y solo se descarga al entrar al dashboard) y **tabla de usuarios** con
-  búsqueda (debounce), orden por columnas, badges de licencia y **asignación optimista**
-  (`POST /licenses/assign` + actualización local + refresco del reporte).
+  búsqueda (debounce), orden por columnas, badges, **selector de rol inline**
+  (`PATCH /users/:id/role`, deshabilitado en la propia fila) y **asignación /
+  desasignación optimista** (`POST /licenses/assign|revoke` + actualización local +
+  refresco del reporte, con rollback si el backend rechaza). Los `USER` ven solo
+  **Mi consumo** (`GET /usage/me`: badge de licencia, KPIs y su serie diaria).
 - **Rendimiento**: `shallowRef` para los datos, `v-memo` en las filas de la tabla y
-  polling de `/usage` cada 30 s que se pausa cuando la pestaña está oculta y se detiene
-  al desmontar.
+  polling de `/usage` cada 30 s (solo ADMIN en la pestaña Empresa) que se pausa cuando
+  la pestaña está oculta y se detiene al desmontar; el consumo personal también hace
+  polling propio de `/usage/me`.
 - **TailwindCSS 4** vía plugin de Vite; sin component library.
 
 ### Scripts del frontend
@@ -313,7 +318,7 @@ Contraseña de **todos** los usuarios: `Password123!`
 | Email                     | Rol    | Licencia | Uso recomendado                                  |
 | ------------------------- | ------ | -------- | ------------------------------------------------ |
 | `admin@empresa.com`       | ADMIN  | ✅       | Ver todo y asignar licencias                     |
-| `usuario@empresa.com`     | USER   | ✅       | Dashboard sin acciones de asignación             |
+| `usuario@empresa.com`     | USER   | ✅       | Ve solo su consumo personal (`/usage/me`)          |
 | `diego.ramos@empresa.com` | USER   | ❌       | Probar la asignación de licencias (como ADMIN)   |
 | `pablo.mendoza@empresa.com` | USER | ❌       | Probar la asignación de licencias (como ADMIN)   |
 
