@@ -1,14 +1,21 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
-import type { CompanyUser } from '@/api/types'
+import type { CompanyUser, Role } from '@/api/types'
 
 const props = defineProps<{
   users: CompanyUser[]
   canAssign: boolean
   assigningUserId: string | null
+  updatingRoleUserId: string | null
+  revokingUserId: string | null
+  currentUserId: string | null
 }>()
 
-const emit = defineEmits<{ assign: [user: CompanyUser] }>()
+const emit = defineEmits<{
+  assign: [user: CompanyUser]
+  revoke: [user: CompanyUser]
+  changeRole: [user: CompanyUser, role: Role]
+}>()
 
 const search = ref('')
 const appliedSearch = ref('')
@@ -63,6 +70,22 @@ function toggleSort(key: 'name' | 'license'): void {
 
 function formatAssignedDate(value: string): string {
   return new Date(value).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })
+}
+
+function isRoleDisabled(user: CompanyUser): boolean {
+  return (
+    user.id === props.currentUserId ||
+    props.updatingRoleUserId === user.id ||
+    props.revokingUserId === user.id ||
+    props.assigningUserId === user.id
+  )
+}
+
+function onRoleChange(user: CompanyUser, event: Event): void {
+  const role = (event.target as HTMLSelectElement).value as Role
+  if (role !== user.role) {
+    emit('changeRole', user, role)
+  }
 }
 </script>
 
@@ -127,7 +150,13 @@ function formatAssignedDate(value: string): string {
           <tr
             v-for="user in visibleUsers"
             :key="user.id"
-            v-memo="[user.activeLicenseId, assigningUserId === user.id]"
+            v-memo="[
+              user.activeLicenseId,
+              user.role,
+              assigningUserId === user.id,
+              updatingRoleUserId === user.id,
+              revokingUserId === user.id,
+            ]"
             class="border-b border-slate-50 last:border-0 hover:bg-slate-50/60"
           >
             <td class="px-4 py-3 sm:px-5">
@@ -135,7 +164,19 @@ function formatAssignedDate(value: string): string {
               <p class="text-xs text-slate-400">{{ user.email }}</p>
             </td>
             <td class="px-4 py-3 sm:px-5">
+              <select
+                v-if="canAssign"
+                class="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 focus:border-slate-400 focus:ring-1 focus:ring-slate-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                :aria-label="`Rol de ${user.name}`"
+                :disabled="isRoleDisabled(user)"
+                :value="user.role"
+                @change="onRoleChange(user, $event)"
+              >
+                <option value="ADMIN">ADMIN</option>
+                <option value="USER">USER</option>
+              </select>
               <span
+                v-else
                 class="rounded-full px-2 py-0.5 text-xs font-medium"
                 :class="
                   user.role === 'ADMIN'
@@ -172,8 +213,16 @@ function formatAssignedDate(value: string): string {
               >
                 {{ assigningUserId === user.id ? 'Asignando…' : 'Asignar' }}
               </button>
-              <span v-else-if="!canAssign" class="text-xs text-slate-300">—</span>
-              <span v-else class="text-xs text-slate-400">Gestionada</span>
+              <button
+                v-else-if="canAssign && user.activeLicenseId"
+                class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:border-red-300 hover:bg-red-50 hover:text-red-700 focus:ring-2 focus:ring-red-300 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="revokingUserId === user.id"
+                type="button"
+                @click="emit('revoke', user)"
+              >
+                {{ revokingUserId === user.id ? 'Revocando…' : 'Desasignar' }}
+              </button>
+              <span v-else class="text-xs text-slate-300">—</span>
             </td>
           </tr>
 
