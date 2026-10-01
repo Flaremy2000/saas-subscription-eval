@@ -24,6 +24,21 @@ interface FindManyArgs {
   select?: { date?: boolean; apiCalls?: boolean };
 }
 
+interface UserFindManyArgs {
+  where: { companyId: string };
+  include?: {
+    licenses?: {
+      where?: { status?: LicenseStatus };
+      orderBy?: { assignedAt: 'asc' | 'desc' };
+      take?: number;
+      select?: { id?: boolean; assignedAt?: boolean };
+    };
+  };
+  orderBy?: { name: 'asc' | 'desc' };
+}
+
+type UserWithLicenses = User & { licenses: Array<{ id: string; assignedAt: Date }> };
+
 /**
  * In-memory Prisma double covering the query shapes used by the application.
  * Lets the e2e suites exercise the real service layer without a database.
@@ -40,6 +55,30 @@ export class FakePrisma {
         return this.users.find((user) => user.email === where.email) ?? null;
       }
       return this.users.find((user) => user.id === where.id) ?? null;
+    },
+    findMany: async (args: UserFindManyArgs): Promise<UserWithLicenses[]> => {
+      const rows = this.users
+        .filter((user) => user.companyId === args.where.companyId)
+        .sort((a, b) =>
+          args.orderBy?.name === 'desc'
+            ? b.name.localeCompare(a.name)
+            : a.name.localeCompare(b.name),
+        );
+
+      const licenseArgs = args.include?.licenses;
+      return rows.map((user) => {
+        const licenses = this.licenses
+          .filter(
+            (license) =>
+              license.userId === user.id &&
+              (licenseArgs?.where?.status === undefined ||
+                license.status === licenseArgs.where.status),
+          )
+          .sort((a, b) => b.assignedAt.getTime() - a.assignedAt.getTime())
+          .slice(0, licenseArgs?.take)
+          .map((license) => ({ id: license.id, assignedAt: license.assignedAt }));
+        return { ...user, licenses };
+      });
     },
   };
 
